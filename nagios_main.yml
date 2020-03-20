@@ -5,6 +5,10 @@
     nagios_version: '4.4.5'
     nagios_plugin_version: '2.2.1'  
   tasks:
+    - name: This play book will fail if it not debian or Redhat based
+      fail:
+        msg: This playbook is supported only on redhat and debain
+      when: ansible_facts['os_family'] != "RedHat" or ansible_facts['os_family'] != "Debian"
     - name: install deps
       package:
         name: "{{ item }}"
