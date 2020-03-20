@@ -1,0 +1,84 @@
+---
+- hosts: all
+  become: yes
+  vars:
+    nagios_version: '4.4.5'
+    nagios_plugin_version: '2.2.1'  
+  tasks:
+    - name: install deps
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+          "{{ deps }}"
+      when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
+    - name: downloading the nagios zip file
+      get_url:
+        dest: "/tmp"
+        url: "https://github.com/NagiosEnterprises/nagioscore/archive/nagios-{{ nagios_version }}.tar.gz"
+    - name: untar zip file
+      unarchive:
+        dest: "/tmp"
+        remote_src: yes
+        src: "/tmp/nagioscore-nagios-{{ nagios_version }}.tar.gz"
+    - name: compiling file in ubuntu
+      shell:
+        chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}/"
+        cmd: sudo ./configure --with-httpd-conf=/etc/apache2/sites-enabled && sudo make all
+      when: ansible_facts['os_family'] == "Debian"
+    - name: compiling in  centos
+      shell:
+        chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}/"
+        cmd: ./configure && sudo make all
+      when: ansible_facts['os_family'] == "RedHat"
+    - name: Create User and Group
+      shell:
+        cmd: sudo make install-groups-users > installgroups.log && sudo usermod -a -G nagios www-data > usermod.log
+      args:
+        chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}/"
+      when: ansible_facts['os_family'] == 'Debian'
+    - name: Create User and Group
+      shell:
+        cmd: sudo make install-groups-users > installgroups.log && sudo usermod -a -G nagios apache > usermod.log
+      args:
+        chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}"
+      when: ansible_facts['os_family'] == 'RedHat'
+    - name: installing bineries
+      shell:
+        cmd: sudo make install
+        chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}"
+    - name: installing services
+      shell:
+        cmd: sudo make install-daemoninit && make install-commandmode && sudo make install-config && sudo make install-webconf
+        chdir: "/tmp/nagioscore-nagios-{{ nagios_version }}"
+    - name: installing passlilb
+      pip: name=passlib
+    - name: nagios admin account
+      htpasswd:
+        name: nagiosadmin
+        path: /usr/local/nagios/etc/htpasswd.users
+        password: nagios
+      notify: restarting services
+    - name: installing plugin zip file
+      get_url:
+        dest: "/tmp"
+        url: https://github.com/nagios-plugins/nagios-plugins/archive/release-{{ nagios_plugin_version }}.tar.gz
+    - name: untar files
+      unarchive:
+        dest: "/tmp/"
+        remote_src: yes
+        src: "/tmp/nagios-plugins-release-{{ nagios_plugin_version }}.tar.gz"
+    - name: compilling binaries
+      shell:
+        cmd: sudo ./tools/setup && sudo ./configure && sudo make && sudo make install
+        chdir: "/tmp/nagios-plugins-release-{{ nagios_plugin_version }}"
+      notify: restarting services
+  handlers:
+    - name: restarting services
+      service:
+        name: "{{ item }}"
+        state: restarted
+        enabled: yes
+      loop:
+        "{{ web }}"
+
